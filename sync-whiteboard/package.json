@@ -1,0 +1,29 @@
+{
+  "name": "sync-whiteboard",
+  "version": "0.1.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "keywords": [],
+  "author": "Wade Tait",
+  "license": "ISC",
+  "description": "A minimal sync server for tlDraw based whiteboards",
+  "devDependencies": {
+    "@types/node": "^22.14.1",
+    "@types/ws": "^8.18.1",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.0.1",
+    "@fastify/websocket": "^11.0.2",
+    "@tldraw/sync-core": "^3.12.0",
+    "@tldraw/tlschema": "^3.12.0",
+    "fastify": "^5.3.0",
+    "ws": "^8.18.1"
+  }
+}

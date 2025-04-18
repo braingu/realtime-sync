@@ -1,0 +1,25 @@
+{
+  "name": "sync-core",
+  "version": "0.1.0",
+  "description": "A minimal WebSocket-based room sync engine for real-time collaboration",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "prepare": "npm run build"
+  },
+  "keywords": [],
+  "author": "Wade Tait",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.14.1",
+    "typescript": "^5.8.3"
+  }
+}
