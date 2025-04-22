@@ -1,139 +1,70 @@
-import { fastify, FastifyRequest } from "fastify";
+import fastify from "fastify";
 import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";
 import { getOrCreateRoom } from "./rooms";
-import { WebSocket } from "ws";
+import { storeAsset, loadAsset } from "./assets";
 
 const PORT = 5858;
 const app = fastify({
   logger: {
     level: "debug",
-    transport: {
-      target: "pino-pretty",
-    },
   },
 });
 
-// Register plugins
+// Register the websocket plugin before defining routes
 app.register(websocket);
-app.register(cors, {
-  origin: "*",
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true,
-});
 
-// Health check endpoint - useful for debugging
-app.get("/", async () => ({
-  status: "sync-whiteboard is running",
-  time: new Date().toISOString(),
-}));
+// Configure CORS for both HTTP and WebSockets
+app.register(cors, { origin: "*" });
 
-// Define request parameter types
-interface ConnectParams {
-  roomId?: string; // Make optional to handle empty roomId case
-}
+// After registering plugins, define routes
+app.register(async (app) => {
+  // Health check endpoint
+  app.get("/", async (request, reply) => {
+    return {
+      status: "sync-whiteboard is running",
+      time: new Date().toISOString(),
+    };
+  });
 
-// TLDraw sends these parameters automatically
-interface ConnectQuerystring {
-  clientId?: string;
-  appUser?: string;
-  storeId?: string;
-  sessionId?: string; // TLDraw adds this automatically
-}
+  // Main WebSocket connection for tldraw sync - simplified to match reference
+  app.get("/connect/:roomId", { websocket: true }, async (socket, req) => {
+    // The roomId comes from the URL pathname
+    const roomId = (req.params as any).roomId as string;
 
-// Debug endpoint to check request parameters
-app.get("/debug", (request, reply) => {
-  reply.send({
-    query: request.query,
-    params: request.params,
-    url: request.url,
-    headers: request.headers,
+    // The sessionId is passed from the client as a query param
+    const sessionId = (req.query as any)?.sessionId as string;
+
+    // Here we make or get an existing instance of TLSocketRoom for the given roomId
+    const room = await getOrCreateRoom(roomId);
+
+    // and finally connect the socket to the room
+    room.handleSocketConnect({ sessionId, socket });
+  });
+
+  // Allow all content types with no parsing for file uploads
+  app.addContentTypeParser("*", (_, __, done) => done(null));
+
+  // Asset endpoint for handling file uploads
+  app.put("/assets/:id", async (req, reply) => {
+    const id = (req.params as any).id as string;
+    await storeAsset(id, req.raw);
+    return { success: true };
+  });
+
+  // Asset endpoint for retrieving files
+  app.get("/assets/:id", async (req, reply) => {
+    const id = (req.params as any).id as string;
+    const data = await loadAsset(id);
+    reply.send(data);
   });
 });
 
-// WebSocket sync route that handles both /:roomId and / paths
-app.get<{ Params: ConnectParams; Querystring: ConnectQuerystring }>(
-  "/connect/:roomId?", // Make roomId optional with ?
-  { websocket: true },
-  (
-    socket,
-    request: FastifyRequest<{
-      Params: ConnectParams;
-      Querystring: ConnectQuerystring;
-    }>
-  ) => {
-    // Use roomId from params or default to a global room
-    const roomId = request.params.roomId || "global-room";
-
-    // TLDraw will add sessionId, but we can use clientId as a backup
-    const sessionId =
-      request.query.sessionId || request.query.clientId || crypto.randomUUID();
-    const appUser = request.query.appUser || "anonymous";
-    const storeId = request.query.storeId || "default-store";
-
-    // Log detailed connection info for debugging
-    app.log.info(
-      {
-        event: "websocket_connect",
-        roomId,
-        sessionId,
-        appUser,
-        storeId,
-        url: request.url,
-        headers: request.headers,
-      },
-      `WS Connect: user=${appUser} room=${roomId}`
-    );
-
-    try {
-      const room = getOrCreateRoom(roomId);
-
-      // Handle socket errors
-      socket.on("error", (err) => {
-        app.log.error(`WebSocket error in room ${roomId}: ${err}`);
-      });
-
-      // Handle socket close
-      socket.on("close", (code, reason) => {
-        app.log.info(
-          `WS Disconnect: user=${appUser} room=${roomId} code=${code} reason=${
-            reason || "No reason"
-          }`
-        );
-      });
-
-      // Handle socket messages for debugging
-      socket.on("message", (data) => {
-        app.log.debug(
-          `WS Message from ${appUser} in ${roomId}: ${data.slice.length} bytes`
-        );
-      });
-
-      // Process the connection with TLSocketRoom
-      room.handleSocketConnect({
-        sessionId,
-        socket: socket,
-      });
-    } catch (err: any) {
-      app.log.error(`Error in WS handler: ${err}`);
-      socket.close(1011, `Server error: ${err.message}`);
-    }
-  }
-);
-
-// Start the server with proper error handling
+// Start the server
 const start = async () => {
   try {
-    // Listen on all interfaces (0.0.0.0) to ensure it's accessible
     await app.listen({ port: PORT, host: "0.0.0.0" });
-    console.log(`🚀 sync-whiteboard server running on port ${PORT}`);
-
-    // Log all routes for debugging
-    console.log("Routes registered:");
-    app._routes.forEach((route) => {
-      console.log(`${route.method} ${route.url}`);
-    });
+    console.log(`sync-whiteboard server running on port ${PORT}`);
   } catch (err) {
     app.log.error(err);
     process.exit(1);
